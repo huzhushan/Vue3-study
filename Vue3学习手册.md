@@ -84,9 +84,7 @@ npm run dev
 
 ## 1. Composition API(常用部分)
 
-文档:
-
-https://composition-api.vuejs.org/zh/api.html
+文档：https://composition-api.vuejs.org/zh/api.html
 
 ### setup
 
@@ -95,10 +93,18 @@ https://composition-api.vuejs.org/zh/api.html
 - setup是一个函数, 只在初始化时执行一次
 
   - 以后大部分代码都是在setup函数中写
+  
 - 返回一个对象, 对象中的属性或方法, 模板中可以直接使用
+
 - setup返回的数据会和data和methods进行合并，setup优先级更高
+
 - setup函数中**没有this**
-- 以后开发都不使用this了
+
+  - 以后开发都不使用this了
+
+- setup 不能是一个 async 函数
+
+  > 因为setup函数必须返回一个json对象供模板使用,如果setup是一个async函数,返回的将是一个promise对象
 
 ```html
 <template>
@@ -160,7 +166,6 @@ export default defineComponent({ // defineComponent就是定义一个组件的�
 > },
 > ```
 >
-> 
 
 - 作用: 定义响应式数据
 - 语法: const xxx = ref(initValue):
@@ -203,8 +208,13 @@ export default defineComponent({ // defineComponent就是定义一个组件的�
 ### reactive
 
 - 作用: 定义对象格式的响应式数据
+
+  > 如果用 ref 定义对象/数组, 内部会自动将对象/数组转换为 reactive 的对象
+
 - const proxy = reactive(obj): 接收一个普通对象然后返回该普通对象的响应式代理器对象
+
 - js中修改数据不需要操作`.value`
+
 - 一般用来定义一个引用类型的响应式数据
 
 ```html
@@ -302,143 +312,236 @@ setup() {
 
 ### 比较 Vue2 与 Vue3 的响应式(重要)
 
+#### vue2中的问题
+1. 对象直接添加新的属性或删除已有属性，界面不会自动更新，不是响应式
+
+2. 直接通过下标修改元素(arr[1] = xxx)或更新数组的length，界面不会自动更新，不是响应式 
+
 #### vue2 的响应式
 
-> 关于vue2响应式的具体实现可以阅读我的文章：[v-model原理](https://www.toutiao.com/i6919477699404694023/?tt_from=weixin&utm_campaign=client_share&wxshare_count=1&timestamp=1612002792&app=news_article&utm_source=weixin&utm_medium=toutiao_ios&use_new_style=1&req_id=20210130183312010026076020234E4793&group_id=6919477699404694023)
-
 - 核心:
-  - 对象: 通过 defineProperty 对对象的已有属性值的读取和修改进行劫持(监视/拦截)
+  - 对象: 通过 defineProperty 对**对象的已有属性**值的读取和修改进行劫持(监视/拦截)
+
+    ```js
+    /*
+    const vm = new Vue({
+    	el: '#app',
+    	data: {
+    		name: "John",
+        	age: 12,
+    	}
+    })
+    */
+    
+    // 假设vm是我们的vue实例
+    const vm = {} 
+    // data数据
+    const data = { 
+        name: "John",
+        age: 12,
+    }
+    // 遍历data,将data属性绑定到vm上,对属性的读取和修改进行拦截
+    Object.entries(data).forEach(([prop, value]) => {
+        let initValue = value;
+        Object.defineProperty(vm, prop, {
+            get () {
+                console.log('执行get')
+                return initValue
+            },
+            set (newValue) {
+                console.log('执行set')
+                initValue = newValue
+            }
+        })
+    })
+    
+    
+    // 读取属性值
+    console.log(vm.name); // '执行get' 'John'
+    // 修改属性值
+    vm.name = 'bob'; // '执行set'
+    console.log(vm.name); // '执行get' 'bob'
+    // 添加属性
+    vm.sex = '男'; // 不会执行set方法
+    console.log(vm.sex); // 能打印出`男`,但是不会执行get方法
+    ```
+  
+    >  关于vue2响应式的具体实现可以阅读我的文章：[手动实现MVVM双向绑定(v-model原理)](https://www.toutiao.com/i6919477699404694023/?tt_from=weixin&utm_campaign=client_share&wxshare_count=1&timestamp=1612002792&app=news_article&utm_source=weixin&utm_medium=toutiao_ios&use_new_style=1&req_id=20210130183312010026076020234E4793&group_id=6919477699404694023)
+  
   - 数组: 通过重写数组更新数组一系列更新元素的方法来实现元素修改的劫持
-
-```js
-Object.defineProperty(data, "count", {
-  get() {},
-  set() {},
-});
-```
-
-- 问题
-  - 对象直接新添加的属性或删除已有属性, 界面不会自动更新
-  - 直接通过下标替换元素或更新 length, 界面不会自动更新 arr[1] = {}
-
-
+  
+    > 数组的push、pop、splice等方法之所以能正常使用，其实是因为被vue重写了
+    
+    ```js
+    // 把push,pop等方法放在一个对象里面
+    const obj = {
+      push() {},
+      pop() {},
+      shift() {},
+      unshift() {},
+      splice() {},
+      sort() {},
+      reverse() {}
+    }
+    
+    // 遍历obj，使用defineProperty监听
+    Object.keys(obj).forEach(key => {
+        Object.defineProperty(obj, key, {
+            value: function(...args) {
+                return Array.prototype[key].call(this, ...args)
+            }
+        })
+    })
+    
+    const arr = [];
+    arr.__proto__ = obj; // 将数组的隐式原型指向obj。
+    // 我们知道arr.__proto__等于它的构造函数的原型，也就是Array.prototype，所以arr可以执行push、pop等方法，但是现在arr.__proto__又等于obj了，所以arr.push就相当于obj.push了,而obj.push我们用defineProperty进行了监听,执行obj.push()就会执行value函数
+    
+    // 测试
+    arr.push(1) // 执行这一句就相当于执行obj.push(1)
+    console.log(arr)
+    ```
+    
+    
 
 #### Vue3 的响应式
 
 - 核心:
-  - 通过 Proxy(代理): 拦截对 data 任意属性的任意(13 种)操作, 包括属性值的读写, 属性的添加, 属性的删除等...
+  - 通过 Proxy(代理): 拦截对**对象本身**的操作, 包括属性值的读写, 属性的添加, 属性的删除等...
+  
   - 通过 Reflect(反射): 动态对被代理对象的相应属性进行特定的操作
+  
   - 文档:
     - https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Proxy
     - https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Reflect
-
-```js
-const proxy = new Proxy(data, {
-  // 拦截读取属性值
-  get(target, prop) {
-    return Reflect.get(target, prop);
-  },
-  // 拦截设置属性值或添加新属性
-  set(target, prop, value) {
-    return Reflect.set(target, prop, value);
-  },
-  // 拦截删除属性
-  deleteProperty(target, prop) {
-    return Reflect.deleteProperty(target, prop);
-  },
-});
-
-proxy.name = "tom";
-```
-
-```html
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Proxy 与 Reflect</title>
-  </head>
-  <body>
-    <script>
-      const user = {
+    
+    ```js
+    const user = {
         name: "John",
         age: 12,
-      };
-
-      /* 
-    proxyUser是代理对象, user是被代理对象
-    后面所有的操作都是通过代理对象来操作被代理对象内部属性
-    */
-      const proxyUser = new Proxy(user, {
+    };
+    
+    // 代理对象
+    const proxyUser = new Proxy(user, {
         get(target, prop) {
-          console.log("劫持get()", prop);
-          return Reflect.get(target, prop);
+            console.log("劫持get()", prop);
+            return Reflect.get(target, prop);
         },
-
+    
         set(target, prop, val) {
-          console.log("劫持set()", prop, val);
-          return Reflect.set(target, prop, val); // (2)
+            console.log("劫持set()", prop, val);
+            return Reflect.set(target, prop, val); 
         },
-
+    
         deleteProperty(target, prop) {
-          console.log("劫持delete属性", prop);
-          return Reflect.deleteProperty(target, prop);
+            console.log("劫持delete", prop);
+            return Reflect.deleteProperty(target, prop);
         },
-      });
-      // 读取属性值
-      console.log(proxyUser === user);
-      console.log(proxyUser.name, proxyUser.age);
-      // 设置属性值
-      proxyUser.name = "bob";
-      proxyUser.age = 13;
-      console.log(user);
-      // 添加属性
-      proxyUser.sex = "男";
-      console.log(user);
-      // 删除属性
-      delete proxyUser.sex;
-      console.log(user);
-    </script>
-  </body>
-</html>
+    });
+    
+    // 读取属性值
+    console.log(proxyUser === user); // false
+    console.log(proxyUser.name); // 劫持get() name John
+    // 设置属性值
+    proxyUser.name = "bob"; // 劫持set() name bob
+    proxyUser.age = 13;
+    console.log(user);
+    // 添加属性
+    proxyUser.sex = "男"; // 劫持set() sex 男
+    console.log(user);
+    // 删除属性
+    delete proxyUser.sex; // 劫持delete sex
+    console.log(user);
+    ```
+    
+    > 现在我们可以利用Proxy手动实现ref和reactive了,关于这个知识我们稍后讲解
+
+#### vue3中不存在vue2的问题
+
+> 正式由于vue3是使用Proxy代理的方式拦截对象本身,所以在vue3中添加/删除属性都是响应式的,通过下标修改数组也是响应式的.
+
+```js
+<template>
+  <div
+    v-for="(value, key ) of person"
+    :key="key"
+  >
+    {{key}} - {{value}}
+  </div>
+  <button @click="add">增加对象属性</button>
+  <hr />
+  <div
+    v-for="(item, index) of arr"
+    :key="index"
+  >{{item}}</div>
+  <button @click="modify">修改数组元素</button>
+</template>
+
+<script>
+  import { defineComponent, reactive, toRefs } from "vue";
+  export default defineComponent({
+    setup() {
+        // 为了避免ts报错,将initData指定为any类型
+        const initData: any = {
+          person: {
+            name: "张三",
+            age: 20,
+          },
+          arr: ["a", "b", "c"],
+        };
+        const state = reactive(initData);
+		
+        // 添加新属性,也是响应式的
+        const add = () => { 
+          state.person.sex = "男";
+          state.person.hobby = ["吃饭", "睡觉", "打豆豆"];
+        };
+		
+        // 通过下标修改元素,也是响应式的
+        const modify = () => { 
+          state.arr[0] = "A"; 
+        };
+
+        return { ...toRefs(state), add, modify };
+    },
+  });
+</script>
 ```
 
-### setup 细节
 
-- setup 执行的时机
-  - 在 beforeCreate 之前执行(一次), 此时组件对象还没有创建
-  - this 是 undefined, 不能通过 this 来访问 data/computed/methods / props
-  - 其实所有的 composition API 相关回调函数中也都不可以
-- setup 的返回值
-  - 一般都返回一个对象: 为模板提供数据, 也就是模板中可以直接使用此对象中的所有属性/方法
-  - 返回对象中的属性会与 data 函数返回对象的属性合并成为组件对象的属性
-  - 返回对象中的方法会与 methods 中的方法合并成功组件对象的方法
-  - 如果有重名, setup 优先
-  - 注意:
-  - 一般不要混合使用: methods 中可以访问 setup 提供的属性和方法, 但在 setup 方法中不能访问 data 和 methods
-  - setup 不能是一个 async 函数: 因为返回值不再是 return 的对象, 而是 promise, 模板看不到 return 对象中的属性数据
-- setup 的参数
-  - setup(props, context) / setup(props, {attrs, slots, emit})
-  - props: 父组件传给子组件的属性（**在子组件中通过 props 声明过的属性**）
-  - attrs: **没有在子组件中通过 props 声明过的属性**, 相当于 this.$attrs
-  - slots: 包含所有传入的插槽内容的对象, 相当于 this.$slots
-  - emit: 用来分发自定义事件的函数, 相当于 this.$emit
+
+### setup 的参数
+
+- props - 接收父组件传入的**通过 props 声明过的属性**
+- context - 是一个对象,解构出来包含:
+  - attrs - 接收父组件传入的**没有通过 props 声明过的属性**, 相当于 this.$attrs
+  - slots - 接收父组件传入的插槽内容的对象, 相当于 this.$slots
+  - emit - 用来分发自定义事件的函数, 相当于 this.$emit
+
+父组件:
 
 ```html
 <template>
-  <h2>App</h2>
+  <h2>Parent</h2>
   <p>msg: {{msg}}</p>
-  <button @click="fn('--')">更新</button>
-
-  <child :msg="msg" msg2="cba" @fn="fn" />
+  <button @click="update('--')">更新</button>
+  <hr />	
+  <child
+    :msg="msg"
+    msg2="cba"
+    @fn="update"
+  >
+    <template #aaa>
+      <em>我是插槽的内容</em>
+    </template>
+  </child>
 </template>
 
 <script lang="ts">
-  import { reactive, ref } from "vue";
+  import { defineComponent, reactive, ref } from "vue";
   import child from "./child.vue";
 
-  export default {
+  export default defineComponent({
     components: {
       child,
     },
@@ -446,30 +549,29 @@ proxy.name = "tom";
     setup() {
       const msg = ref("abc");
 
-      function fn(content: string) {
+      function update(content: string) {
         msg.value += content;
       }
       return {
         msg,
-        fn,
+        update,
       };
     },
-  };
+  });
 </script>
 ```
+
+子组件child.vue:
 
 ```html
 <template>
   <div>
-    <h3>{{n}}</h3>
-    <h3>{{m}}</h3>
-
-    <h3>msg: {{msg}}</h3>
-    <h3>msg2: {{$attrs.msg2}}</h3>
-
-    <slot name="xxx"></slot>
-
-    <button @click="update">更新</button>
+    <h3>Child</h3>
+    <p>msg: {{msg}}</p>
+    <slot name="aaa"></slot>
+    <div>
+       <button @click="update">更新</button> 
+    </div>
   </div>
 </template>
 
@@ -478,52 +580,31 @@ proxy.name = "tom";
 
   export default defineComponent({
     name: "child",
-
     props: ["msg"],
-
     emits: ["fn"], // 可选的, 声明了更利于程序员阅读, 且可以对分发的事件数据进行校验
-
-    data() {
-      console.log("data", this);
-      return {
-        // n: 1
-      };
-    },
-
-    beforeCreate() {
-      console.log("beforeCreate", this);
-    },
-
-    methods: {
-      // update () {
-      //   this.n++
-      //   this.m++
-      // }
-    },
 
     // setup (props, context) {
     setup(props, { attrs, emit, slots }) {
-      console.log("setup", this);
-      console.log(props.msg, attrs.msg2, slots, emit);
+      console.log(
+          "props---",
+          props,
 
-      const m = ref(2);
-      const n = ref(3);
+          "attrs---",
+          attrs,
+
+          "slots---",
+          slots,
+
+          "emit---",
+          emit
+      );
 
       function update() {
-        // console.log('--', this)
-        // this.n += 2
-        // this.m += 2
-
-        m.value += 2;
-        n.value += 2;
-
         // 分发自定义事件
         emit("fn", "++");
       }
 
       return {
-        m,
-        n,
         update,
       };
     },
@@ -531,152 +612,157 @@ proxy.name = "tom";
 </script>
 ```
 
-### reactive 与 ref-细节
+### 计算属性computed
 
-- 是 Vue3 的 composition API 中 2 个最重要的响应式 API
-- ref 用来处理基本类型数据, reactive 用来处理对象(递归深度响应式)
-- 如果用 ref 对象/数组, 内部会自动将对象/数组转换为 reactive 的代理对象
-- ref 内部: 通过给 value 属性添加 getter/setter 来实现对数据的劫持
-- reactive 内部: 通过使用 Proxy 来实现对对象内部所有数据的劫持, 并通过 Reflect 操作对象内部数据
-- ref 的数据操作: 在 js 中要.value, 在模板中不需要(内部解析模板时会自动添加.value)
+> 回顾vue2中的计算属性
+>
+> ```js
+> computed: {
+>     // 只有getter
+>     fullName() {
+>         return this.firstName + " " + this.lastName;
+>     },
+>     // 有 getter 和 setter
+>     fullName2: {
+>         get() {
+>             return this.firstName + " " + this.lastName;
+>         }, 
+>         set(val) {
+>             const names = value.split(" ");
+>             this.firstName = names[0];
+>             this.lastName = names[1];
+>         }
+>     }
+> }
+> ```
+>
 
-```html
-<template>
-  <h2>App</h2>
-  <p>m1: {{m1}}</p>
-  <p>m2: {{m2}}</p>
-  <p>m3: {{m3}}</p>
-  <button @click="update">更新</button>
-</template>
+vue3的计算属性
 
-<script lang="ts">
-  import { reactive, ref } from "vue";
+- computed - 用法跟vue2类似，不过需要先引入computed
 
-  export default {
-    setup() {
-      const m1 = ref("abc");
-      const m2 = reactive({ x: 1, y: { z: "abc" } });
+```js
+import { defineComponent, reactive, toRefs, computed } from "vue";
 
-      // 使用ref处理对象  ==> 对象会被自动reactive为proxy对象
-      const m3 = ref({ a1: 2, a2: { a3: "abc" } });
-      console.log(m1, m2, m3);
-      console.log(m3.value.a2); // 也是一个proxy对象
-
-      function update() {
-        m1.value += "--";
-        m2.x += 1;
-        m2.y.z += "++";
-
-        m3.value = { a1: 3, a2: { a3: "abc---" } };
-        m3.value.a2.a3 += "=="; // reactive对对象进行了深度数据劫持
-        console.log(m3.value.a2);
-      }
-
-      return {
-        m1,
-        m2,
-        m3,
-        update,
-      };
-    },
-  };
-</script>
-```
-
-### 计算属性与监视
-
-- computed 函数:
-  - 与 computed 配置功能一致
-  - 只有 getter
-  - 有 getter 和 setter
-- watch 函数
-  - 与 watch 配置功能一致
-  - 监视指定的一个或多个响应式数据, 一旦数据变化, 就自动执行监视回调
-  - 默认初始时不执行回调, 但可以通过配置 immediate 为 true, 来指定初始时立即执行第一次
-  - 通过配置 deep 为 true, 来指定深度监视
-- watchEffect 函数
-  - 不用直接指定要监视的数据, 回调函数中使用的哪些响应式数据就监视哪些响应式数据
-  - 默认初始时就会执行第一次, 从而可以收集需要监视的数据
-  - 监视数据发生变化时回调
-
-```html
-<template>
-  <h2>App</h2>
-  fistName: <input v-model="user.firstName" /><br />
-  lastName: <input v-model="user.lastName" /><br />
-  fullName1: <input v-model="fullName1" /><br />
-  fullName2: <input v-model="fullName2" /><br />
-  fullName3: <input v-model="fullName3" /><br />
-</template>
-
-<script lang="ts">
-  /*
-计算属性与监视
-1. computed函数: 
-  与computed配置功能一致
-  只有getter
-  有getter和setter
-2. watch函数
-  与watch配置功能一致
-  监视指定的一个或多个响应式数据, 一旦数据变化, 就自动执行监视回调
-  默认初始时不执行回调, 但可以通过配置immediate为true, 来指定初始时立即执行第一次
-  通过配置deep为true, 来指定深度监视
-3. watchEffect函数
-  不用直接指定要监视的数据, 回调函数中使用的哪些响应式数据就监视哪些响应式数据
-  默认初始时就会执行第一次, 从而可以收集需要监视的数据
-  监视数据发生变化时回调
-*/
-
-  import { reactive, ref, computed, watch, watchEffect } from "vue";
-
-  export default {
+export default defineComponent({
     setup() {
       const user = reactive({
-        firstName: "A",
-        lastName: "B",
+        firstName: "zhang",
+        lastName: "san",
       });
 
       // 只有getter的计算属性
       const fullName1 = computed(() => {
-        console.log("fullName1");
         return user.firstName + "-" + user.lastName;
       });
 
       // 有getter与setter的计算属性
       const fullName2 = computed({
         get() {
-          console.log("fullName2 get");
           return user.firstName + "-" + user.lastName;
         },
 
         set(value: string) {
-          console.log("fullName2 set");
           const names = value.split("-");
           user.firstName = names[0];
           user.lastName = names[1];
         },
       });
 
+      return {
+        ...toRefs(user),
+        fullName1,
+        fullName2,
+      };
+    },
+});
+```
+
+### 侦听属性watch
+
+> 回顾vue2的侦听属性
+>
+> ```js
+> watch: {
+>     obj(newVal, oldVal) {
+>         console.log(newVal, oldVal);
+>     },
+>     // 立即监听、深度监听
+>     obj: {
+>         handler(newVal, oldVal) {
+>             console.log(newVal, oldVal);
+>         },
+>         immediate: true, // 初始化立即执行一次
+>         deep: true, // 深度监视
+>     },
+>     // 监听对象上的属性
+>     'obj.a'(newVal, oldVal) {
+>         console.log(newVal, oldVal);
+>     }    
+> }
+> ```
+
+vue3的侦听属性：
+
+- watch - **指定监听数据**
+  - 监视指定的一个或多个响应式数据, 一旦数据变化, 就自动执行监视回调
+  
+    - 如果是监听reactive对象中的属性,  必须通过函数来指定
+    - 监听多个数据,使用数组来指定
+  
+  - 默认初始时不执行回调, 但可以通过配置 immediate 为 true, 来指定初始时立即执行第一次
+  
+  - 通过配置 deep 为 true, 来指定深度监视
+  
+- watchEffect - **不指定监听数据**
+  - 不用直接指定要监视的数据, 回调函数中使用的哪些响应式数据就监视哪些响应式数据
+  - **默认初始时就会执行第一次**
+
+> 使用时需要先引入watch 和 watchEffect
+
+```js
+
+  import { defineComponent, ref, reactive, toRefs, watch, watchEffect } from "vue";
+
+  export default defineComponent({
+    setup() {
+        const str = ref('abc')
+        const user = reactive({
+          firstName: "zhang",
+          lastName: "san",
+        });
+      
+        // 侦听ref数据
+        watch(str, (newVal, oldVal) => {
+          console.log("watch ref", newVal, oldVal);
+        });
+        
+        // 侦听reactive对象的属性
+        watch(
+          () => user.firstName, // 侦听reactive对象的属性, 必须通过函数来指定
+          (newVal, oldVal) => {
+            console.log("watch reactive", newVal, oldVal);
+          }
+        );
+
+      // watch多个数据: 使用数组来指定 
+      watch(
+        [str, () => user.firstName, () => user.lastName],
+        (newVal, oldVal) => {
+          console.log("监视多个数据", newVal, oldVal);
+        }
+      );   
+        
+     /* 
+        使用watch的2个特性:
+          深度监视
+          初始化立即执行
+        */
       const fullName3 = ref("");
-
-      /* 
-    watchEffect: 监视所有回调中使用的数据
-    */
-      /* 
-    watchEffect(() => {
-      console.log('watchEffect')
-      fullName3.value = user.firstName + '-' + user.lastName
-    }) 
-    */
-
-      /* 
-    使用watch的2个特性:
-      深度监视
-      初始化立即执行
-    */
       watch(
         user,
         () => {
+          console.log("立即监听,深度监听");
           fullName3.value = user.firstName + "-" + user.lastName;
         },
         {
@@ -684,86 +770,70 @@ proxy.name = "tom";
           deep: true, // 是否是深度监视, 默认是false
         }
       );
+      
 
       /* 
-    watch一个数据
-      默认在数据发生改变时执行回调
-    */
-      watch(fullName3, (value) => {
-        console.log("watch");
-        const names = value.split("-");
-        user.firstName = names[0];
-        user.lastName = names[1];
-      });
-
-      /* 
-    watch多个数据: 
-      使用数组来指定
-      如果是ref对象, 直接指定
-      如果是reactive对象中的属性,  必须通过函数来指定
-    */
-      watch(
-        [() => user.firstName, () => user.lastName, fullName3],
-        (values) => {
-          console.log("监视多个数据", values);
-        }
-      );
-
+        watchEffect: 监视所有回调中使用的数据
+        */
+      const fullName4 = ref("");
+      watchEffect(() => {
+          console.log('watchEffect')
+          fullName4.value = user.firstName + '-' + user.lastName
+      }) 
+  
       return {
-        user,
-        fullName1,
-        fullName2,
+        ...toRefs(user),
+        str,
         fullName3,
+        fullName4,
       };
     },
-  };
-</script>
+  });
+
 ```
 
 ### 生命周期
 
-**与 2.x 版本生命周期相对应的组合式 API**
+> vue2中的生命周期钩子函数依旧可以使用，不过建议使用vue3的钩子函数
 
-- `beforeCreate` -> 使用 `setup()`
-- `created` -> 使用 `setup()`
-- `beforeMount` -> `onBeforeMount`
-- `mounted` -> `onMounted`
-- `beforeUpdate` -> `onBeforeUpdate`
-- `updated` -> `onUpdated`
-- `beforeDestroy` -> `onBeforeUnmount`
-- `destroyed` -> `onUnmounted`
-- `errorCaptured` -> `onErrorCaptured`
+- **vue2与vue3生命周期对比**
 
-**新增的钩子函数**
+|          vue2 | vue3            |
+| ------------: | --------------- |
+|  beforeCreate | setup           |
+|       created | setup           |
+|   beforeMount | onBeforeMount   |
+|       mounted | onMounted       |
+|  beforeUpdate | onBeforeUpdate  |
+|       updated | onUpdated       |
+| beforeDestroy | onBeforeUnmount |
+|     destroyed | onUnmounted     |
 
-组合式 API 还提供了以下调试钩子函数：
-
-- onRenderTracked
-- onRenderTriggered
+**注意：**beforeDestroy和destroyed已经被废弃，如果想继续使用vue2的写法，对应的api是beforeUnmount(~~beforeDestroy~~)和unmounted(~~destroyed~~)
 
 ```html
 <template>
-  <div class="about">
-    <h2>msg: {{msg}}</h2>
-    <hr />
-    <button @click="update">更新</button>
-  </div>
+  <p>msg: {{msg}}</p>
+  <button @click="update('--')">更新</button>
 </template>
 
 <script lang="ts">
   import {
-    ref,
-    onMounted,
-    onUpdated,
-    onUnmounted,
-    onBeforeMount,
-    onBeforeUpdate,
-    onBeforeUnmount,
-  } from "vue";
+      defineComponent,
+      ref,
+      onBeforeMount,
+      onMounted,
+      onActivated,
+  	  onDeactivated,
+      onBeforeUpdate,
+      onUpdated,
+      onBeforeUnmount,
+      onUnmounted,
+  } from "vue"; 
 
-  export default {
+  export default defineComponent({
     beforeCreate() {
-      console.log("beforeCreate()");
+      console.log("beforeCreate");
     },
 
     created() {
@@ -785,97 +855,151 @@ proxy.name = "tom";
     updated() {
       console.log("updated");
     },
-
+	// vue3中已经用beforeUnmount代替了beforeDestroy
     beforeUnmount() {
       console.log("beforeUnmount");
     },
-
+	// vue3中已经用unmounted代替了destroyed
     unmounted() {
       console.log("unmounted");
     },
+      
+    setup(){
+        const msg = ref("abc");
 
-    setup() {
-      const msg = ref("abc");
+        function update(content: string) {
+          msg.value += content;
+        }
+        
+        onBeforeMount(() => {
+          console.log("--onBeforeMount");
+        });
 
-      const update = () => {
-        msg.value += "--";
-      };
+        onMounted(() => {
+          console.log("--onMounted");
+        });
+        
+        onActivated(() => {
+          console.log("--onActivated");
+        });
 
-      onBeforeMount(() => {
-        console.log("--onBeforeMount");
-      });
+        onDeactivated(() => {
+          console.log("--onDeactivated");
+        });
 
-      onMounted(() => {
-        console.log("--onMounted");
-      });
+        onBeforeUpdate(() => {
+          console.log("--onBeforeUpdate");
+        });
 
-      onBeforeUpdate(() => {
-        console.log("--onBeforeUpdate");
-      });
+        onUpdated(() => {
+          console.log("--onUpdated");
+        });
+        
+        onBeforeUnmount(() => {
+          console.log("--onBeforeUnmount");
+        });
 
-      onUpdated(() => {
-        console.log("--onUpdated");
-      });
-
-      onBeforeUnmount(() => {
-        console.log("--onBeforeUnmount");
-      });
-
-      onUnmounted(() => {
-        console.log("--onUnmounted");
-      });
-
-      return {
-        msg,
-        update,
-      };
-    },
-  };
+        onUnmounted(() => {
+          console.log("--onUnmounted");
+        });
+     
+        return {
+          msg,
+          update
+        };
+    }
+  });
 </script>
 ```
 
-```html
+- **新增的调试用的钩子函数**
+
+  > 它会跟踪页面上所有响应式变量和方法的状态，也就是我们用return返回去的值，他都会跟踪。只要页面有update的情况，他就会跟踪，然后生成一个event对象，我们通过event对象来查找程序的问题所在
+
+  - onRenderTriggered - **在onBeforeUpdate前触发**
+  - onRenderTracked  - **在onBeforeUpdate后触发**
+
+  ```js
+  import {
+    onRenderTriggered,
+    onRenderTracked,
+  } from "vue";
+  
+  setup(){
+      onRenderTriggered((event) => {
+        console.log("--onRenderTriggered", event);
+      });
+      onRenderTracked((event) => {
+        console.log("--onRenderTracked", event);
+      });
+  }
+  ```
+
+### ref 获取元素
+
+> 我们知道vue2中是用this.$refs.xxx来获取元素或组件的，但是vue3中 没有this的概念，应该如何获取元素呢
+>
+> 这个时候我们可以使用之前学过的ref创建响应式数据的api来获取元素
+
+1. 使用ref创建响应式数据，假设叫X
+2. 模板中绑定ref属性，值为上面的X
+   - 注意不能使用v-bind动态绑定
+   - 这时X就是一个dom元素或组件了
+
+示例: 让输入框自动获取焦点
+
+```vue
 <template>
-  <h2>App</h2>
-  <button @click="isShow=!isShow">切换</button>
-  <hr />
-  <Child v-if="isShow" />
+  <!-- 2. 模板中绑定ref属性，此时inputRef就是这个input元素了 -->
+  <input type="text" ref="inputRef" placeholder="我会自动获取焦点" />
 </template>
 
 <script lang="ts">
-  import Child from "./Child.vue";
-  export default {
-    data() {
-      return {
-        isShow: true,
-      };
-    },
+import { onMounted, ref } from "vue";
 
-    components: {
-      Child,
-    },
-  };
+export default {
+  setup() {
+    // 1. 使用ref创建响应式数据inputRef
+    const inputRef = ref<HTMLElement | null>(null); // 为了防止ts报错，需要加上ts类型校验
+	
+    // 3. 渲染完成，让input获取焦点，注意要操作`.value`
+    onMounted(() => {
+      inputRef.value && inputRef.value.focus();
+    });
+
+    return {
+      inputRef,
+    };
+  },
+};
 </script>
 ```
 
 ### 自定义 hook 函数
 
-- 使用 Vue3 的组合 API 封装的可复用的功能函数
+> 用过react的同学对**hook函数**这个名词应该不陌生，hook函数翻译成中文就是钩子函数（注意并不只是生命周期钩子函数）。
+>
+> 其实我们前面学过的所有api，比如ref、reactive、computed、watch、onBeforeMount等等都是hook函数，只不过他们是vue内部hook函数，现在我们要学怎么自定义一个hook函数。
 
-- 自定义 hook 的作用类似于 vue2 中的 mixin 技术
+1. 创建一个函数，函数的名称必须**use开头**
 
-- 自定义 Hook 的优势: 很清楚复用功能代码的来源, 更清楚易懂
+2. 函数必须return一些数据
 
-- 需求 1: 收集用户鼠标点击的页面坐标
+   
 
-  hooks/useMousePosition.ts
+需求 1: 收集用户鼠标点击页面的坐标
 
-```js
+```vue
+<template>
+  <div>
+    <h2>x: {{ x }}, y: {{ y }}</h2>
+  </div>
+</template>
+
+<script>
 import { ref, onMounted, onUnmounted } from "vue";
-/* 
-收集用户鼠标点击的页面坐标
-*/
-export default function useMousePosition() {
+
+function useMousePosition() {
   // 初始化坐标数据
   const x = ref(-1);
   const y = ref(-1);
@@ -897,24 +1021,7 @@ export default function useMousePosition() {
   });
 
   return { x, y };
-}
-```
-
-```vue
-<template>
-  <div>
-    <h2>x: {{ x }}, y: {{ y }}</h2>
-  </div>
-</template>
-
-<script>
-import { ref } from "vue";
-/* 
-在组件中引入并使用自定义hook
-自定义hook的作用类似于vue2中的mixin技术
-自定义Hook的优势: 很清楚复用功能代码的来源, 更清楚易懂
-*/
-import useMousePosition from "./hooks/useMousePosition";
+}    
 
 export default {
   setup() {
@@ -929,32 +1036,32 @@ export default {
 </script>
 ```
 
-- 利用 TS 泛型强化类型检查
 
-- 需求 2: 封装发 ajax 请求的 hook 函数
 
-  hooks/useRequest.ts
+需求 2: 封装发 ajax 请求的 hook 函数
+
+hooks/useRequest.ts
 
 ```js
 import { ref } from "vue";
 import axios from "axios";
 
-/* 
-使用axios发送异步ajax请求
-*/
-export default function useUrlLoader<T>(url: string) {
-  const result = (ref < T) | (null > null);
+export default function useRequest<T>(url: string) {
+  // result的数据类型用泛型T表示，因为不同接口返回的数据结构肯定是不一样的
+  const result = ref<T | null>(null);
   const loading = ref(true);
-  const errorMsg = ref(null);
+  const errorMsg = ref("");
 
   axios
     .get(url)
     .then((response) => {
       loading.value = false;
       result.value = response.data;
+      errorMsg.value = "";
     })
     .catch((e) => {
       loading.value = false;
+      result.value = null;
       errorMsg.value = e.message || "未知错误";
     });
 
@@ -971,24 +1078,26 @@ export default function useUrlLoader<T>(url: string) {
   <div class="about">
     <h2 v-if="loading">LOADING...</h2>
     <h2 v-else-if="errorMsg">{{ errorMsg }}</h2>
-    <!-- <ul v-else>
-    <li>id: {{result.id}}</li>
-    <li>name: {{result.name}}</li>
-    <li>distance: {{result.distance}}</li>
-  </ul> -->
+    
+    <!-- 
+    <ul v-else>
+      <li>id: {{result.id}}</li>
+      <li>name: {{result.name}}</li>
+      <li>distance: {{result.distance}}</li>
+    </ul> 
+    -->
 
-    <ul v-for="p in result" :key="p.id">
+    <ul v-else v-for="p in result" :key="p.id">
       <li>id: {{ p.id }}</li>
       <li>title: {{ p.title }}</li>
       <li>price: {{ p.price }}</li>
     </ul>
-    <!-- <img v-if="result" :src="result[0].url" alt=""> -->
   </div>
 </template>
 
 <script lang="ts">
-import { watch } from "vue";
-import useRequest from "./hooks/useRequest";
+import { defineComponent } from "vue";
+import useRequest from "@/hooks/useRequest";
 
 // 地址数据接口
 interface AddressResult {
@@ -1004,18 +1113,10 @@ interface ProductResult {
   price: number;
 }
 
-export default {
+export default defineComponent({
   setup() {
-    // const {loading, result, errorMsg} = useRequest<AddressResult>('/data/address.json')
-    const { loading, result, errorMsg } = useRequest<ProductResult[]>(
-      "/data/products.json"
-    );
-
-    watch(result, () => {
-      if (result.value) {
-        console.log(result.value.length); // 有提示
-      }
-    });
+    // const {loading, result, errorMsg} = useRequest<AddressResult>('xxx/xxx/address.json'); 
+    const { loading, result, errorMsg } = useRequest<ProductResult[]>('xxx/xxx/products.json');
 
     return {
       loading,
@@ -1023,142 +1124,82 @@ export default {
       errorMsg,
     };
   },
-};
+});
 </script>
 ```
 
 
-
-### ref 获取元素
-
-利用 ref 函数获取组件中的标签元素
-
-功能需求: 让输入框自动获取焦点
-
-```vue
-<template>
-  <h2>App</h2>
-  <input type="text" />---
-  <input type="text" ref="inputRef" />
-</template>
-
-<script lang="ts">
-import { onMounted, ref } from "vue";
-/* 
-ref获取元素: 利用ref函数获取组件中的标签元素
-功能需求: 让输入框自动获取焦点
-*/
-export default {
-  setup() {
-    const inputRef = ref<HTMLElement | null>(null);
-
-    onMounted(() => {
-      inputRef.value && inputRef.value.focus();
-    });
-
-    return {
-      inputRef,
-    };
-  },
-};
-</script>
-```
 
 ## 2. Composition API(其它部分)
 
 ### 1 shallowReactive 与 shallowRef
 
-- shallowReactive : 只处理了对象内最外层属性的响应式(也就是浅响应式)
-- shallowRef: 只处理了 value 的响应式, 不进行对象的 reactive 处理
-- 什么时候用浅响应式呢?
-  - 一般情况下使用 ref 和 reactive 即可
-  - 如果有一个对象数据, 结构比较深, 但变化时只是外层属性变化 ===> shallowReactive
-  - 如果有一个对象数据, 后面会产生新的对象来替换 ===> shallowRef
+- 它们都表示浅响应式
+
+  >  reactive和ref是深响应
+
+- shallowReactive : 只处理了对象第一层属性的响应式（只响应第一层）
+
+- shallowRef: 只有重新赋值时才是响应式（不响应内部数据，只响应整体）
 
 ```html
 <template>
-  <h2>App</h2>
+  <h2>shallowReactive和shallowRef</h2>
 
   <h3>m1: {{m1}}</h3>
   <h3>m2: {{m2}}</h3>
-  <h3>m3: {{m3}}</h3>
-  <h3>m4: {{m4}}</h3>
 
   <button @click="update">更新</button>
 </template>
 
 <script lang="ts">
-  import { reactive, ref, shallowReactive, shallowRef } from "vue";
-  /* 
-shallowReactive与shallowRef
-  shallowReactive: 只处理了对象内最外层属性的响应式(也就是浅响应式)
-  shallowRef: 只处理了value的响应式, 不进行对象的reactive处理
-总结:
-  reactive与ref实现的是深度响应式, 而shallowReactive与shallowRef是浅响应式
-  什么时候用浅响应式呢?
-    一般情况下使用ref和reactive即可,
-    如果有一个对象数据, 结构比较深, 但变化时只是外层属性变化 ===> shallowReactive
-    如果有一个对象数据, 后面会产生新的对象来替换 ===> shallowRef
-*/
+  import { shallowReactive, shallowRef } from "vue";
 
-  export default {
+
+export default {
     setup() {
-      const m1 = reactive({ a: 1, b: { c: 2 } });
-      const m2 = shallowReactive({ a: 1, b: { c: 2 } });
+        const m1 = shallowReactive({ a: 1, b: { c: 2 } });
+        const m2: any = shallowRef({ a: 1, b: { c: 2 } });
 
-      const m3 = ref({ a: 1, b: { c: 2 } });
-      const m4 = shallowRef({ a: 1, b: { c: 2 } });
+        const update = () => {
+          // m1.b.c += 1; // 无效
+          m1.a += 1; // 有效
 
-      const update = () => {
-        // m1.b.c += 1
-        // m2.b.c += 1
+          // m2.value.a += 1; // 无效
+          m2.value = { a: 123 }; // 有效
+        };
 
-        // m3.value.a += 1
-        m4.value.a += 1;
-      };
-
-      return {
-        m1,
-        m2,
-        m3,
-        m4,
-        update,
-      };
+        return {
+          m1,
+          m2,
+          update,
+        };
     },
-  };
+};
 </script>
 ```
 
 ### 2 readonly 与 shallowReadonly
 
+- 它们表示只读代理对象
 - readonly:
-  - 深度只读数据
-  - 获取一个对象 (响应式或纯对象) 或 ref 并返回原始代理的只读代理。
-  - 只读代理是深层的：访问的任何嵌套 property 也是只读的。
+  - 深度只读
+  - 设置readonly后，修改响应式数据会报错
 - shallowReadonly
-  - 浅只读数据
-  - 创建一个代理，使其自身的 property 为只读，但不执行嵌套对象的深度只读转换
+  - 浅只读
+  - 设置shallowReadonly后，修改响应式数据的第一层属性会报错
 - 应用场景:
   - 在某些特定情况下, 我们可能不希望对数据进行更新的操作, 那就可以包装生成一个只读代理对象来读取数据, 而不能修改或删除
 
 ```html
 <template>
-  <h2>App</h2>
+  <h2>readonly和shallowReadonly</h2>
   <h3>{{state}}</h3>
   <button @click="update">更新</button>
 </template>
 
 <script lang="ts">
   import { reactive, readonly, shallowReadonly } from "vue";
-  /*
-readonly: 深度只读数据
-  获取一个对象 (响应式或纯对象) 或 ref 并返回原始代理的只读代理。
-  只读代理是深层的：访问的任何嵌套 property 也是只读的。
-shallowReadonly: 浅只读数据
-  创建一个代理，使其自身的 property 为只读，但不执行嵌套对象的深度只读转换 
-应用场景: 
-  在某些特定情况下, 我们可能不希望对数据进行更新的操作, 那就可以包装生成一个只读代理对象来读取数据, 而不能修改或删除
-*/
 
   export default {
     setup() {
@@ -1169,15 +1210,15 @@ shallowReadonly: 浅只读数据
         },
       });
 
-      // const rState1 = readonly(state)
+      const rState1 = readonly(state)
       const rState2 = shallowReadonly(state);
 
       const update = () => {
-        // rState1.a++ // error
-        // rState1.b.c++ // error
+        // rState1.a++ // ts报错
+        // rState1.b.c++ // ts报错
 
-        // rState2.a++ // error
-        rState2.b.c++;
+        // rState2.a++ // ts报错
+        rState2.b.c++; // 不报错，但是页面不会变化
       };
 
       return {
@@ -1192,10 +1233,10 @@ shallowReadonly: 浅只读数据
 ### 3 toRaw 与 markRaw
 
 - toRaw
-  - 返回由 `reactive` 或 `readonly` 方法转换成响应式代理的普通对象。
-  - 这是一个还原方法，可用于临时读取，访问不会被代理/跟踪，写入时也不会触发界面更新。
+  - 返回 `reactive` 或 `readonly` 对象的原始数据。
+  - 这是一个还原方法，可用于临时读取，得到的数据不具有响应式。
 - markRaw
-  - 标记一个对象，使其永远不会转换为代理。返回对象本身
+  - 标记一个对象，**使其不具有响应式**
   - 应用场景:
     - 有些值不应被设置为响应式的，例如复杂的第三方类实例或 Vue 组件对象。
     - 当渲染具有不可变数据源的大列表时，跳过代理转换可以提高性能。
@@ -1208,9 +1249,7 @@ shallowReadonly: 浅只读数据
 </template>
 
 <script lang="ts">
-  /* 
-toRaw: 得到reactive代理对象的目标数据对象
-*/
+
   import { markRaw, reactive, toRaw } from "vue";
   export default {
     setup() {
@@ -1229,7 +1268,7 @@ toRaw: 得到reactive代理对象的目标数据对象
         // state.likes = likes
         state.likes = markRaw(likes); // likes数组就不再是响应式的了
         setTimeout(() => {
-          state.likes[0] += "--";
+          state.likes.push("c");
         }, 1000);
       };
 
