@@ -4,11 +4,10 @@
  * @Author: zsen.hu@uni-chain.com
  * @Date: 2021-02-02 19:56:01
  * @LastEditors: zsen.hu@uni-chain.com
- * @LastEditTime: 2021-02-02 20:02:30
+ * @LastEditTime: 2021-02-03 09:32:01
 -->
 <template>
   <h2>{{state}}</h2>
-  <div>{{str}}</div>
   <button @click="testToRaw">测试toRaw</button>
   <button @click="testMarkRaw">测试markRaw</button>
 </template>
@@ -28,12 +27,15 @@ export default {
     const testToRaw = () => {
       const user = toRaw(state);
       user.age++; // 界面不会更新
+      console.log(user);
+      console.log(state);
     };
 
     const testMarkRaw = () => {
       const likes = ["a", "b"];
       // state.likes = likes
       state.likes = markRaw(likes); // likes数组就不再是响应式的了
+      console.log(state.likes);
       setTimeout(() => {
         state.likes.push("c");
       }, 1000);

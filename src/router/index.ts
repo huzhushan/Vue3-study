@@ -4,7 +4,7 @@
  * @Author: zsen.hu@uni-chain.com
  * @Date: 2021-01-29 11:05:01
  * @LastEditors: zsen.hu@uni-chain.com
- * @LastEditTime: 2021-02-02 19:56:52
+ * @LastEditTime: 2021-02-03 16:53:11
  */
 import { createRouter, createWebHistory, RouteRecordRaw } from "vue-router";
 import Home from "../views/Home.vue";
@@ -43,6 +43,31 @@ const routes: Array<RouteRecordRaw> = [
     path: "/markRaw",
     name: "markRaw",
     component: () => import("../views/markRaw.vue"),
+  },
+  {
+    path: "/toRef",
+    name: "toRef",
+    component: () => import("../views/toRef.vue"),
+  },
+  {
+    path: "/customRef",
+    name: "customRef",
+    component: () => import("../views/customRef.vue"),
+  },
+  {
+    path: "/provide",
+    name: "provide",
+    component: () => import("../views/provide/Father.vue"),
+  },
+  {
+    path: "/isRef",
+    name: "isRef",
+    component: () => import("../views/isRef.vue"),
+  },
+  {
+    path: "/suspense",
+    name: "suspense",
+    component: () => import("../views/suspense/index.vue"),
   },
 ];
 

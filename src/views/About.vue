@@ -4,7 +4,7 @@
  * @Author: zsen.hu@uni-chain.com
  * @Date: 2021-01-29 11:05:01
  * @LastEditors: zsen.hu@uni-chain.com
- * @LastEditTime: 2021-02-02 18:30:06
+ * @LastEditTime: 2021-02-03 15:58:07
 -->
 <template>
   <h2>Parent</h2>
@@ -49,6 +49,7 @@ import {
   onUnmounted,
   onRenderTracked,
   onRenderTriggered,
+  nextTick,
 } from "vue";
 import child from "./child.vue";
 
@@ -92,6 +93,10 @@ export default defineComponent({
 
     onBeforeMount(() => {
       console.log("--onBeforeMount");
+      console.log("没有nextTick", document.querySelector("p")?.innerHTML);
+      nextTick(() => {
+        console.log("nextTick", document.querySelector("p")?.innerHTML);
+      });
     });
 
     onMounted(() => {

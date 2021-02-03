@@ -102,9 +102,11 @@ npm run dev
 
   - 以后开发都不使用this了
 
-- setup 不能是一个 async 函数
+- setup不要写成async函数
 
   > 因为setup函数必须返回一个json对象供模板使用,如果setup是一个async函数,返回的将是一个promise对象
+  >
+  > 如果setup是一个async函数，那该组件就成了一个异步组件，需要配合Suspense组件才能使用，关于Suspense组件我们后面会学到
 
 ```html
 <template>
@@ -916,8 +918,13 @@ vue3的侦听属性：
 
   > 它会跟踪页面上所有响应式变量和方法的状态，也就是我们用return返回去的值，他都会跟踪。只要页面有update的情况，他就会跟踪，然后生成一个event对象，我们通过event对象来查找程序的问题所在
 
-  - onRenderTriggered - **在onBeforeUpdate前触发**
-  - onRenderTracked  - **在onBeforeUpdate后触发**
+  - onRenderTriggered - 当执行update操作时，会检查哪个响应式数据导致组件重新渲染
+
+    > **在onBeforeUpdate前触发**
+
+  - onRenderTracked  - 当render函数被调用时，会检查哪个响应式数据被收集依赖。
+
+    > **在onBeforeUpdate后触发**
 
   ```js
   import {
@@ -1261,12 +1268,15 @@ export default {
       const testToRaw = () => {
         const user = toRaw(state);
         user.age++; // 界面不会更新
+        console.log(user); 
+        console.log(state); 
       };
 
       const testMarkRaw = () => {
         const likes = ["a", "b"];
         // state.likes = likes
         state.likes = markRaw(likes); // likes数组就不再是响应式的了
+        console.log(state.likes);
         setTimeout(() => {
           state.likes.push("c");
         }, 1000);
@@ -1284,9 +1294,8 @@ export default {
 
 ### 4 toRef
 
-- 为源响应式对象上的某个属性创建一个 ref 对象, 二者内部操作的是同一个数据值, 更新时二者是同步的
+- 为响应式对象上的某个属性创建一个 ref引用, 更新时引用对象会同步更新
 - 区别 ref: 拷贝了一份新的数据值单独操作, 更新时相互不影响
-- 应用: 当要将 某个 prop 的 ref 传递给复合函数时，toRef 很有用
 
 ```html
 <template>
@@ -1296,20 +1305,11 @@ export default {
   <p>{{foo2}}</p>
 
   <button @click="update">更新</button>
-
-  <Child :foo="foo" />
 </template>
 
 <script lang="ts">
-  /*
-toRef:
-  为源响应式对象上的某个属性创建一个 ref对象, 二者内部操作的是同一个数据值, 更新时二者是同步的
-  区别ref: 拷贝了一份新的数据值单独操作, 更新时相互不影响
-  应用: 当要将某个 prop 的 ref 传递给复合函数时，toRef 很有用
-*/
 
   import { reactive, toRef, ref } from "vue";
-  import Child from "./Child.vue";
 
   export default {
     setup() {
@@ -1318,13 +1318,13 @@ toRef:
         bar: 2,
       });
 
-      const foo = toRef(state, "foo");
-      const foo2 = ref(state.foo);
+      const foo = toRef(state, "foo"); // 创建一个state.foo的引用，现在foo和state.foo是引用关系
+      const foo2 = ref(state.foo); // 拷贝，foo2和state.foo没有关系
 
       const update = () => {
-        state.foo++;
-        // foo.value++
-        // foo2.value++  // foo和state中的数据不会更新
+        // state.foo++; 
+        // foo.value++; 
+        foo2.value++;  // foo和state中的数据不会更新
       };
 
       return {
@@ -1334,55 +1334,27 @@ toRef:
         update,
       };
     },
-
-    components: {
-      Child,
-    },
   };
 </script>
 ```
 
-```html
-<template>
-  <h2>Child</h2>
-  <h3>{{foo}}</h3>
-  <h3>{{length}}</h3>
-</template>
+- 应用场景：当要将一个 prop 中的属性作为 ref 传给组合逻辑函数时，toRef 就派上了用场：
 
-<script lang="ts">
-  import { computed, defineComponent, Ref, toRef } from "vue";
-
-  const component = defineComponent({
-    props: {
-      foo: {
-        type: Number,
-        require: true,
-      },
-    },
-
-    setup(props, context) {
-      const length = useFeatureX(toRef(props, "foo"));
-
-      return {
-        length,
-      };
-    },
-  });
-
-  function useFeatureX(foo: Ref) {
-    const lenth = computed(() => foo.value.length);
-
-    return lenth;
-  }
-
-  export default component;
-</script>
+```js
+export default {
+  setup(props) {
+    useSomeFeature(toRef(props, 'foo'))
+  },
+}
 ```
+
+
 
 ### 5 customRef
 
-- 创建一个自定义的 ref，并对其依赖项跟踪和更新触发进行显式控制
-- 需求: 使用 customRef 实现 debounce 的示例
+- 用于自定义一个 ref，可以**显式地控制依赖追踪**和**触发响应 **
+- 接受一个工厂函数，两个参数分别是用于追踪的 track 与用于触发响应的 trigger，并返回一个带有 get 和 set 属性的对象。
+- 需求: 使用 customRef 实现防抖函数
 
 ```html
 <template>
@@ -1392,20 +1364,12 @@ toRef:
 </template>
 
 <script lang="ts">
-  /*
-customRef:
-  创建一个自定义的 ref，并对其依赖项跟踪和更新触发进行显式控制
-
-需求: 
-  使用 customRef 实现 debounce 的示例
-*/
-
   import { ref, customRef } from "vue";
 
   export default {
     setup() {
       const keyword = useDebouncedRef("", 500);
-      console.log(keyword);
+      
       return {
         keyword,
       };
@@ -1413,8 +1377,8 @@ customRef:
   };
 
   /* 
-实现函数防抖的自定义ref
-*/
+    实现函数防抖的自定义ref
+   */
   function useDebouncedRef<T>(value: T, delay = 200) {
     let timeout: number;
     return customRef((track, trigger) => {
@@ -1457,10 +1421,6 @@ customRef:
 
 <script lang="ts">
   import { provide, ref } from "vue";
-  /* 
-- provide` 和 `inject` 提供依赖注入，功能类似 2.x 的 `provide/inject
-- 实现跨层级组件(祖孙)间通信
-*/
 
   import Son from "./Son.vue";
   export default {
@@ -1485,16 +1445,25 @@ customRef:
 <template>
   <div>
     <h2>子组件</h2>
+    <p>当前颜色: {{color}}</p>  
     <hr />
     <GrandSon />
   </div>
 </template>
 
 <script lang="ts">
+  import { inject } from "vue";
   import GrandSon from "./GrandSon.vue";
   export default {
     components: {
       GrandSon,
+    },
+    setup() {
+      const color = inject("color");
+
+      return {
+        color,
+      };
     },
   };
 </script>
@@ -1502,7 +1471,8 @@ customRef:
 
 ```html
 <template>
-  <h3 :style="{color}">孙子组件: {{color}}</h3>
+  <h2>孙组件</h2>
+  <p>当前颜色: {{color}}</p>
 </template>
 
 <script lang="ts">
@@ -1790,7 +1760,6 @@ console.log(isProxy(readonly({})));
 ### 2 Teleport(瞬移)
 
 - Teleport 提供了一种干净的方法, 让组件的 html 在父组件界面外的特定标签(很可能是 body)下插入显示
-- ModalButton.vue:
 
 ```vue
 <template>
@@ -1848,73 +1817,22 @@ export default {
 </style>
 ```
 
-- App.vue:
-
-```vue
-<template>
-  <h2>App</h2>
-  <modal-button></modal-button>
-</template>
-
-<script lang="ts">
-import ModalButton from "./ModalButton.vue";
-
-export default {
-  setup() {
-    return {};
-  },
-
-  components: {
-    ModalButton,
-  },
-};
-</script>
-```
-
 ### 3 Suspense(不确定的)
 
-- 它们允许我们的应用程序在等待异步组件时渲染一些后备内容，可以让我们创建一个平滑的用户体验
+> Suspense组件是配合异步组件使用的，它可以让异步组件返回数据前渲染一些后备内容
+>
+> 那我们首先要学会创建一个异步组件
+
+创建异步组件：
+
+- 在setup函数中返回一个promise，就是一个异步组件
+- setup函数写成async函数，也是一个异步组件
+
+异步组件 AsyncComp.vue:
 
 ```vue
 <template>
-  <Suspense>
-    <template v-slot:default>
-      <AsyncComp />
-      <!-- <AsyncAddress/> -->
-    </template>
-
-    <template v-slot:fallback>
-      <h1>LOADING...</h1>
-    </template>
-  </Suspense>
-</template>
-
-<script lang="ts">
-/* 
-异步组件 + Suspense组件
-*/
-// import AsyncComp from './AsyncComp.vue'
-import AsyncAddress from "./AsyncAddress.vue";
-import { defineAsyncComponent } from "vue";
-const AsyncComp = defineAsyncComponent(() => import("./AsyncComp.vue"));
-export default {
-  setup() {
-    return {};
-  },
-
-  components: {
-    AsyncComp,
-    AsyncAddress,
-  },
-};
-</script>
-```
-
-- AsyncComp.vue
-
-```vue
-<template>
-  <h2>AsyncComp22</h2>
+  <h2>AsyncComp</h2>
   <p>{{ msg }}</p>
 </template>
 
@@ -1922,36 +1840,83 @@ export default {
 export default {
   name: "AsyncComp",
   setup() {
-    // return new Promise((resolve, reject) => {
-    //   setTimeout(() => {
-    //     resolve({
-    //       msg: 'abc'
-    //     })
-    //   }, 2000)
-    // })
-    return {
-      msg: "abc",
-    };
+    return new Promise((resolve, reject) => {
+       setTimeout(() => {
+         resolve({
+           msg: 'abc'
+         })
+       }, 2000)
+    })
   },
 };
 </script>
 ```
 
-- AsyncAddress.vue
+异步组件AsyncComp2.vue
 
 ```vue
 <template>
-  <h2>{{ data }}</h2>
+  <h2>AsyncComp2</h2>
+  <p>{{ msg }}</p>
 </template>
 
 <script lang="ts">
 import axios from "axios";
 export default {
   async setup() {
-    const result = await axios.get("/data/address.json");
-    return {
-      data: result.data,
-    };
+    const result = await new Promise((resolve, reject) => {
+      setTimeout(() => {
+        resolve({
+          msg: "abc",
+        });
+      }, 2000);
+    });
+    return result;
+  },
+};
+</script>
+```
+
+使用异步组件
+
+```vue
+<template>
+  <Suspense>
+    <template v-slot:default>
+      <AsyncComp />
+    </template>
+
+    <template v-slot:fallback>
+      <p>AsyncComp LOADING...</p>
+    </template>
+  </Suspense>
+  <hr />
+  <Suspense>
+    <template v-slot:default>
+      <AsyncComp2 />
+    </template>
+
+    <template v-slot:fallback>
+      <p>AsyncComp2 LOADING...</p>
+    </template>
+  </Suspense>
+</template>
+
+<script lang="ts">
+import AsyncComp from './AsyncComp.vue'
+import AsyncComp2 from './AsyncComp2.vue'
+// 也可以这样引入
+// import { defineAsyncComponent } from "vue";    
+// const AsyncComp = defineAsyncComponent(() => import("./AsyncComp.vue"));
+    
+export default {
+  setup() {
+    return {};
+  },
+
+  components: {
+    AsyncComp,
+    AsyncComp2
   },
 };
 </script>
@@ -1979,16 +1944,91 @@ export default {
 
 - v-model 的本质变化
 
-  - prop：value -> modelValue；
-  - event：input -> update:modelValue；
+  - 在表单上使用没有变化
+
+  - 在组件上使用的时候，默认的属性名和事件名发生了变化
+
+    - prop：value -> modelValue
+    - event：input -> update:modelValue
+
+    ```vue
+    <template>
+    	<Child v-model="msg" />
+    </template>
+    
+    <script lang="ts">
+        import {defineComponent, ref} from 'vue'
+        import Child from './Child.vue'
+        
+        export default defineComponent({
+            components: {
+                Child
+            },
+            setup() {
+                const msg = ref('abc')
+                return {
+                    msg
+                }  
+            }
+        })
+    </script>
+    ```
+
+    Child.vue
+
+    ```vue
+    <template>
+    	<h2>Child</h2>
+    	<p>{{modelValue}}</p>
+        <button @click="update">更新</button>
+    </template>
+    
+    <script lang="ts">
+        import {defineComponent} from 'vue'
+        
+        export default defineComponent({
+            props: ['modelValue'], // 以前是value
+            setup(props, {emit}) {
+                function update() {
+                    // 以前是emit('input')
+                    emit('update:modelValue', props.modelValue + '---') 
+                }  
+                return {
+                    update
+                }
+            }
+        })
+    </script>
+    ```
+
+    - 可以自定义modelValue的名字
+
+    ```vue
+    <Child v-model:str="msg" />
+    ```
+
+    ```js
+    // 触发得改成update:str
+    emit("update:str")
+    ```
+
+    - 可以绑定多个v-model
+
+    ```vue
+    <Child v-model:str="msg" v-model:name="username" />
+    ```
 
 - .sync 修改符已移除, 由 v-model 代替
 
-  - 
+  ```vue
+  <!-- vue2中.sync的用法 -->
+  <Child :name.sync="username" />
+  <!-- 在vue3中其实就相当于 -->
+  <Child v-model:name="username" />
+  ```
 
 - v-if 优先 v-for 解析
 
-  
 
 # 四. Vue3 综合案例 - TodoList
 
