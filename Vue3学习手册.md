@@ -93,7 +93,7 @@ npm run dev
 - setup是一个函数, 只在初始化时执行一次
 
   - 以后大部分代码都是在setup函数中写
-  
+
 - 返回一个对象, 对象中的属性或方法, 模板中可以直接使用
 
 - setup返回的数据会和data和methods进行合并，setup优先级更高
@@ -316,8 +316,52 @@ setup() {
 
 #### vue2中的问题
 1. 对象直接添加新的属性或删除已有属性，界面不会自动更新，不是响应式
-
 2. 直接通过下标修改元素(arr[1] = xxx)或更新数组的length，界面不会自动更新，不是响应式 
+
+```js
+<template>
+  <div
+    v-for="(value, key ) of person"
+    :key="key"
+  >
+    {{key}} - {{value}}
+  </div>
+  <button @click="add">增加对象属性</button>
+  <hr />
+  <div
+    v-for="(item, index) of arr"
+    :key="index"
+  >{{item}}</div>
+  <button @click="modify">修改数组元素</button>
+</template>
+
+<script>
+  export default {
+    data() {
+      return {
+        person: {
+          name: "张三",
+          age: 20,
+        },
+        arr: ["a", "b", "c"],
+      };
+    },
+    methods: {
+      add() {
+        this.person.sex = "男";
+        this.person.hobby = ["吃饭", "睡觉", "打豆豆"];
+      },
+      modify() {
+        this.arr[0] = "A";
+      },
+    },
+  };
+</script>
+```
+
+#### vue3中不存在vue2的问题
+
+> 上面的代码在vue3中没有问题
 
 #### vue2 的响应式
 
@@ -334,7 +378,7 @@ setup() {
     	}
     })
     */
-    
+
     // 假设vm是我们的vue实例
     const vm = {} 
     // data数据
@@ -356,8 +400,9 @@ setup() {
             }
         })
     })
-    
-    
+    ```
+
+    ```js
     // 读取属性值
     console.log(vm.name); // '执行get' 'John'
     // 修改属性值
@@ -367,13 +412,13 @@ setup() {
     vm.sex = '男'; // 不会执行set方法
     console.log(vm.sex); // 能打印出`男`,但是不会执行get方法
     ```
-  
+
     >  关于vue2响应式的具体实现可以阅读我的文章：[手动实现MVVM双向绑定(v-model原理)](https://www.toutiao.com/i6919477699404694023/?tt_from=weixin&utm_campaign=client_share&wxshare_count=1&timestamp=1612002792&app=news_article&utm_source=weixin&utm_medium=toutiao_ios&use_new_style=1&req_id=20210130183312010026076020234E4793&group_id=6919477699404694023)
-  
+
   - 数组: 通过重写数组更新数组一系列更新元素的方法来实现元素修改的劫持
-  
+
     > 数组的push、pop、splice等方法之所以能正常使用，其实是因为被vue重写了
-    
+
     ```js
     // 把push,pop等方法放在一个对象里面
     const obj = {
@@ -385,7 +430,7 @@ setup() {
       sort() {},
       reverse() {}
     }
-    
+
     // 遍历obj，使用defineProperty监听
     Object.keys(obj).forEach(key => {
         Object.defineProperty(obj, key, {
@@ -394,53 +439,53 @@ setup() {
             }
         })
     })
-    
-    const arr = [];
+
+    const arr = new Array();
     arr.__proto__ = obj; // 将数组的隐式原型指向obj。
     // 我们知道arr.__proto__等于它的构造函数的原型，也就是Array.prototype，所以arr可以执行push、pop等方法，但是现在arr.__proto__又等于obj了，所以arr.push就相当于obj.push了,而obj.push我们用defineProperty进行了监听,执行obj.push()就会执行value函数
-    
+
     // 测试
     arr.push(1) // 执行这一句就相当于执行obj.push(1)
     console.log(arr)
     ```
-    
-    
+
+    ​
 
 #### Vue3 的响应式
 
 - 核心:
   - 通过 Proxy(代理): 拦截对**对象本身**的操作, 包括属性值的读写, 属性的添加, 属性的删除等...
-  
+
   - 通过 Reflect(反射): 动态对被代理对象的相应属性进行特定的操作
-  
+
   - 文档:
     - https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Proxy
     - https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Reflect
-    
+
     ```js
     const user = {
         name: "John",
         age: 12,
     };
-    
+
     // 代理对象
     const proxyUser = new Proxy(user, {
         get(target, prop) {
             console.log("劫持get()", prop);
             return Reflect.get(target, prop);
         },
-    
+
         set(target, prop, val) {
             console.log("劫持set()", prop, val);
             return Reflect.set(target, prop, val); 
         },
-    
+
         deleteProperty(target, prop) {
             console.log("劫持delete", prop);
             return Reflect.deleteProperty(target, prop);
         },
     });
-    
+
     // 读取属性值
     console.log(proxyUser === user); // false
     console.log(proxyUser.name); // 劫持get() name John
@@ -455,62 +500,12 @@ setup() {
     delete proxyUser.sex; // 劫持delete sex
     console.log(user);
     ```
-    
+
     > 现在我们可以利用Proxy手动实现ref和reactive了,关于这个知识我们稍后讲解
 
-#### vue3中不存在vue2的问题
+#### 总结
 
-> 正式由于vue3是使用Proxy代理的方式拦截对象本身,所以在vue3中添加/删除属性都是响应式的,通过下标修改数组也是响应式的.
-
-```js
-<template>
-  <div
-    v-for="(value, key ) of person"
-    :key="key"
-  >
-    {{key}} - {{value}}
-  </div>
-  <button @click="add">增加对象属性</button>
-  <hr />
-  <div
-    v-for="(item, index) of arr"
-    :key="index"
-  >{{item}}</div>
-  <button @click="modify">修改数组元素</button>
-</template>
-
-<script>
-  import { defineComponent, reactive, toRefs } from "vue";
-  export default defineComponent({
-    setup() {
-        // 为了避免ts报错,将initData指定为any类型
-        const initData: any = {
-          person: {
-            name: "张三",
-            age: 20,
-          },
-          arr: ["a", "b", "c"],
-        };
-        const state = reactive(initData);
-		
-        // 添加新属性,也是响应式的
-        const add = () => { 
-          state.person.sex = "男";
-          state.person.hobby = ["吃饭", "睡觉", "打豆豆"];
-        };
-		
-        // 通过下标修改元素,也是响应式的
-        const modify = () => { 
-          state.arr[0] = "A"; 
-        };
-
-        return { ...toRefs(state), add, modify };
-    },
-  });
-</script>
-```
-
-
+正式由于vue3是使用Proxy代理的方式拦截对象本身,所以在vue3中添加/删除属性都是响应式的,通过下标修改数组也是响应式的.
 
 ### setup 的参数
 
@@ -708,14 +703,13 @@ vue3的侦听属性：
 
 - watch - **指定监听数据**
   - 监视指定的一个或多个响应式数据, 一旦数据变化, 就自动执行监视回调
-  
+
     - 如果是监听reactive对象中的属性,  必须通过函数来指定
     - 监听多个数据,使用数组来指定
-  
+
   - 默认初始时不执行回调, 但可以通过配置 immediate 为 true, 来指定初始时立即执行第一次
-  
+
   - 通过配置 deep 为 true, 来指定深度监视
-  
 - watchEffect - **不指定监听数据**
   - 不用直接指定要监视的数据, 回调函数中使用的哪些响应式数据就监视哪些响应式数据
   - **默认初始时就会执行第一次**
@@ -791,7 +785,6 @@ vue3的侦听属性：
       };
     },
   });
-
 ```
 
 ### 生命周期
@@ -800,7 +793,7 @@ vue3的侦听属性：
 
 - **vue2与vue3生命周期对比**
 
-|          vue2 | vue3            |
+|        vue2写法 | vue3写法          |
 | ------------: | --------------- |
 |  beforeCreate | setup           |
 |       created | setup           |
@@ -931,7 +924,7 @@ vue3的侦听属性：
     onRenderTriggered,
     onRenderTracked,
   } from "vue";
-  
+
   setup(){
       onRenderTriggered((event) => {
         console.log("--onRenderTriggered", event);
@@ -992,7 +985,6 @@ export default {
 
 2. 函数必须return一些数据
 
-   
 
 需求 1: 收集用户鼠标点击页面的坐标
 
@@ -1955,7 +1947,7 @@ export default {
     <template>
     	<Child v-model="msg" />
     </template>
-    
+
     <script lang="ts">
         import {defineComponent, ref} from 'vue'
         import Child from './Child.vue'
@@ -1982,7 +1974,7 @@ export default {
     	<p>{{modelValue}}</p>
         <button @click="update">更新</button>
     </template>
-    
+
     <script lang="ts">
         import {defineComponent} from 'vue'
         
@@ -2032,7 +2024,7 @@ export default {
 
 # 四. Vue3 综合案例 - TodoList
 
-```vue
+```html
 <template>
   <div class="wrap">
     <div class="input">
